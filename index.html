@@ -622,11 +622,16 @@
             <h2><span class="step-badge">🔑</span> License Key</h2>
             <div class="field">
                 <label>License Key</label>
-                <input type="text" id="licenseKeyInput" placeholder="Enter your license key"
-                       autocomplete="off" spellcheck="false"
-                       onchange="saveLicenseKey(this.value.trim())">
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <input type="text" id="licenseKeyInput" placeholder="Enter your license key"
+                           autocomplete="off" spellcheck="false"
+                           style="flex:1; min-width:200px;"
+                           onchange="saveLicenseKey(this.value.trim())">
+                    <button class="btn" id="checkLicenseBtn" onclick="checkLicenseButton()">🔍 Check License</button>
+                </div>
             </div>
             <div id="licenseStatus" style="font-size:0.85rem; margin-top:6px; min-height:1.2em;"></div>
+            <div id="licenseLockNotice" class="status error hidden" style="margin-top:8px;"></div>
             <p style="color:#888; font-size:0.8rem; margin-top:8px; line-height:1.5;">
                 Your key is saved in this browser so you won't need to re-enter it next time.
                 Calculations are verified against this key on the calculation server.
@@ -1013,11 +1018,11 @@
                 <h2><span class="step-badge">2</span> Polished Rod Loads</h2>
                 <div class="input-group">
                     <label>Peak Load — PPRL (lb):</label>
-                    <input type="number" id="qbPPRL" placeholder="e.g. 18500" oninput="calcEffCBE()">
+                    <input type="number" id="qbPPRL" placeholder="e.g. 18500">
                 </div>
                 <div class="input-group">
                     <label>Min Load — MPRL (lb):</label>
-                    <input type="number" id="qbMPRL" placeholder="e.g. 4200" oninput="calcEffCBE()">
+                    <input type="number" id="qbMPRL" placeholder="e.g. 4200">
                 </div>
             </div>
 
@@ -1050,7 +1055,7 @@
                         <div style="color:#ffd700; font-weight:600; font-size:0.95rem; margin-bottom:12px; letter-spacing:0.03em;">
                             ◈ Side 1
                         </div>
-                        <select id="qbCwcType1" onchange="qbCalcCWMovement()"
+                        <select id="qbCwcType1"
                             style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #0f3460;
                                    background:#0d1628; color:#e0e0e0; font-size:0.88rem; margin-bottom:18px;">
                             <option value="">-- Select Type --</option>
@@ -1071,7 +1076,7 @@
                         <div style="color:#00d4ff; font-weight:600; font-size:0.95rem; margin-bottom:12px; letter-spacing:0.03em;">
                             ◈ Side 2
                         </div>
-                        <select id="qbCwcType2" onchange="qbCalcCWMovement()"
+                        <select id="qbCwcType2"
                             style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #0f3460;
                                    background:#0d1628; color:#e0e0e0; font-size:0.88rem; margin-bottom:18px;">
                             <option value="">-- Select Type --</option>
@@ -1090,6 +1095,10 @@
 
                 <div style="margin-top:12px; color:#444; font-size:0.75rem; font-style:italic; text-align:center;">
                     Movement = CrankLength − ArmLength/2 − (Delta ÷ Weight×2) &nbsp;|&nbsp; if Side 2 = None → Side 1 uses full Delta
+                </div>
+
+                <div style="text-align:center; margin-top:16px;">
+                    <button class="btn" id="qbCalculateBtn" onclick="qbCalculate()">🧮 Calculate</button>
                 </div>
 
                 <div id="qbCwcWarning" class="status hidden" style="margin-top:10px;"></div>
@@ -1138,8 +1147,7 @@
 
         // ═══════════════════════════════════════════════════════════════
         // CALCULATION SERVER (Cloudflare Worker) CONFIG
-        // All engineering formulas now live server-side. Paste your deployed
-        // Worker URL below (e.g. "https://gbtorque-calc.yourname.workers.dev").
+        // All engineering formulas live server-side.
         // ═══════════════════════════════════════════════════════════════
         const WORKER_URL = 'https://gearbox-calculator-api.gamal-salama86.workers.dev/';
 
@@ -1162,18 +1170,106 @@
             if (key) localStorage.setItem('gbLicenseKey', key);
         }
 
-        // Shows license/trial status under the license key field (e.g. "17 of 20 remaining").
-        function showLicenseStatus(status) {
+        // Calculation triggers, split by which feature quota they draw from
+        // (see worker.js ACTION_FEATURE) -- so exhausting one feature's
+        // trials doesn't lock the other.
+        const FULL_ANALYSIS_TRIGGER_IDS = [
+            'datFile', 'unitSize', 'strokeLength', 'rotation',
+            'cbType1', 'cbMove1', 'cbType2', 'cbMove2'
+        ];
+        const QUICK_CBE_TRIGGER_IDS = [
+            'qbCalculateBtn', 'qbUnitSize', 'qbStrokeLength',
+            'qbPPRL', 'qbMPRL', 'qbCwcType1', 'qbCwcType2'
+        ];
+
+        function setTriggersDisabled(ids, disabled) {
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = disabled;
+            });
+        }
+
+        // Locks/unlocks each feature's triggers independently based on its
+        // own remaining count, and shows a renewal notice if anything is
+        // locked. `status` is the license object from the server (or null
+        // for a totally invalid/missing key, which locks everything).
+        function applyLicenseLock(status, valid) {
+            const notices = [];
+
+            if (!valid) {
+                setTriggersDisabled(FULL_ANALYSIS_TRIGGER_IDS, true);
+                setTriggersDisabled(QUICK_CBE_TRIGGER_IDS, true);
+                notices.push('Your license is invalid or expired.');
+            } else {
+                const fa = status && status.fullAnalysis;
+                const qc = status && status.quickCbe;
+                const faLocked = !!(fa && fa.remaining <= 0);
+                const qcLocked = !!(qc && qc.remaining <= 0);
+                setTriggersDisabled(FULL_ANALYSIS_TRIGGER_IDS, faLocked);
+                setTriggersDisabled(QUICK_CBE_TRIGGER_IDS, qcLocked);
+                if (faLocked) notices.push('Full Analysis trials are used up.');
+                if (qcLocked) notices.push('Quick CBE trials are used up.');
+            }
+
+            const notice = document.getElementById('licenseLockNotice');
+            if (notice) {
+                if (notices.length) {
+                    notice.textContent = '🔒 ' + notices.join(' ') + ' Please renew your license to continue.';
+                    notice.classList.remove('hidden');
+                } else {
+                    notice.classList.add('hidden');
+                }
+            }
+        }
+
+        // Renders "✅ Active — Full Analysis: 18/20 | Quick CBE: 45/50" or
+        // "❌ License Expired / Invalid", and re-applies the trigger lock.
+        function showLicenseStatus(status, isValid) {
             const el = document.getElementById('licenseStatus');
             if (!el) return;
-            if (!status) { el.textContent = ''; return; }
+
+            if (!status) {
+                el.textContent = '❌ License Expired / Invalid';
+                el.style.color = '#ff6b6b';
+                applyLicenseLock(null, false);
+                return;
+            }
+
+            const valid = (status.valid !== undefined) ? status.valid : isValid;
+            if (!valid) {
+                el.textContent = '❌ License Expired / Invalid';
+                el.style.color = '#ff6b6b';
+                applyLicenseLock(status, false);
+                return;
+            }
+
             const parts = [];
-            if (status.remaining !== null && status.remaining !== undefined) {
-                parts.push(`${status.remaining} of ${status.maxTrials} calculations remaining`);
+            if (status.fullAnalysis) {
+                parts.push(`Full Analysis: ${status.fullAnalysis.remaining} / ${status.fullAnalysis.max}`);
+            }
+            if (status.quickCbe) {
+                parts.push(`Quick CBE: ${status.quickCbe.remaining} / ${status.quickCbe.max}`);
             }
             if (status.expiresAt) parts.push(`expires ${status.expiresAt}`);
-            el.textContent = parts.length ? '✅ License valid — ' + parts.join(', ') : '';
+            el.textContent = '✅ Active — ' + parts.join(' | ');
             el.style.color = '#00ff88';
+
+            applyLicenseLock(status, true);
+        }
+
+        // Explicit "Check License" button -- read-only, does not deduct a trial.
+        async function checkLicenseButton() {
+            const licenseKey = getLicenseKey();
+            if (!licenseKey) {
+                const el = document.getElementById('licenseStatus');
+                if (el) { el.textContent = '❌ Please enter a license key.'; el.style.color = '#ff6b6b'; }
+                return;
+            }
+            try {
+                await callWorker('checkLicense', {});
+            } catch (err) {
+                // callWorker already updated the badge/lock state on failure.
+            }
         }
 
         // Generic helper for calling the Worker. Every calculation button
@@ -1211,14 +1307,13 @@
                 throw new Error('Calculation server returned an unexpected response.');
             }
             if (!response.ok || !json.ok) {
-                const el = document.getElementById('licenseStatus');
                 const msg = (json && json.message) ? json.message :
                     (response.status === 403 ? 'License key expired or maximum calculation attempts reached.' :
                      'Calculation failed (server error).');
-                if (el) { el.textContent = '❌ ' + msg; el.style.color = '#ff6b6b'; }
+                showLicenseStatus(json && json.license, false);
                 throw new Error(msg);
             }
-            showLicenseStatus(json.license);
+            showLicenseStatus(json.license, true);
             return json.data;
         }
 
@@ -1581,7 +1676,6 @@
             if (!unitKey) {
                 qbSelectedUnit = null;
                 slSelect.innerHTML = '<option value="">-- Select Unit First --</option>';
-                calcEffCBE();
                 return;
             }
             qbSelectedUnit = unitsDB[unitKey];
@@ -1595,7 +1689,6 @@
                 opt.dataset.r = s.r;
                 slSelect.appendChild(opt);
             });
-            calcEffCBE();
         }
 
         function qbOnStrokeChange() {
@@ -1606,76 +1699,36 @@
             } else {
                 qbSelectedStroke = { sl: parseFloat(selectedOpt.dataset.sl), r: parseFloat(selectedOpt.dataset.r) };
             }
-            calcEffCBE();
         }
 
         // ===== QUICK CBE ESTIMATOR =====
-        // TF_max sweep, Effective CBE, M_ic, and the live CW-movement preview are
-        // all computed server-side now (worker.js action "quickCbe"). This function
-        // gathers the current tab inputs, calls the Worker once, and renders
-        // whatever combination of fields the response contains.
-        async function calcEffCBE() {
+        // TF_max sweep, Effective CBE, M_ic, and the CW-movement preview are
+        // all computed server-side (worker.js action "quickCbe"). Per spec,
+        // this tab only calculates when the user clicks the "Calculate"
+        // button below section 4 -- every click both verifies the license
+        // and deducts exactly one trial (the Worker always deducts on this
+        // action). Changing PPRL/MPRL/CW selections no longer auto-recalculates.
+        async function qbCalculate() {
             const pprl = parseFloat(document.getElementById('qbPPRL').value);
             const mprl = parseFloat(document.getElementById('qbMPRL').value);
             const resultEl = document.getElementById('qbEffCBE');
             const tfMaxEl   = document.getElementById('qbTFmax');
             const micEl     = document.getElementById('qbMic');
             const noteEl    = document.getElementById('qbCbeNote');
-
-            if (isNaN(pprl) || isNaN(mprl)) {
-                resultEl.textContent = '-';
-                tfMaxEl.textContent = '-';
-                micEl.textContent = '-';
-                noteEl.textContent = 'Enter both Peak Load (PPRL) and Min Load (MPRL).';
-                await qbCalcCWMovement();
-                return;
-            }
-
-            if (!qbSelectedUnit || !qbSelectedStroke) {
-                resultEl.textContent = ((pprl + mprl) / 2).toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' lb';
-                tfMaxEl.textContent = '-';
-                micEl.textContent = '-';
-                noteEl.textContent = 'Select a unit size and stroke length to compute TF_max and the equivalent moment.';
-                await qbCalcCWMovement();
-                return;
-            }
-
-            try {
-                const data = await callWorker('quickCbe', {
-                    unit: qbSelectedUnit,
-                    stroke: qbSelectedStroke,
-                    pprl: pprl,
-                    mprl: mprl
-                });
-                resultEl.textContent = data.effCBE.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' lb';
-                tfMaxEl.textContent = data.tfMax.toFixed(2) + ' in';
-                micEl.textContent   = data.mIc.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' in-lb';
-                noteEl.textContent = '';
-            } catch (err) {
-                showCalcError(err.message);
-                tfMaxEl.textContent = '-';
-                micEl.textContent = '-';
-                noteEl.textContent = 'Calculation unavailable.';
-            }
-
-            await qbCalcCWMovement();
-        }
-
-        // ===== QUICK CBE ESTIMATOR: live counterweight movement (mirrors Step 6) =====
-        async function qbCalcCWMovement() {
             const move1El = document.getElementById('qbCwc1Move');
             const note1El = document.getElementById('qbCwc1Note');
             const move2El = document.getElementById('qbCwc2Move');
             const note2El = document.getElementById('qbCwc2Note');
             const warn    = document.getElementById('qbCwcWarning');
 
-            const pprl = parseFloat(document.getElementById('qbPPRL').value);
-            const mprl = parseFloat(document.getElementById('qbMPRL').value);
-
-            if (isNaN(pprl) || isNaN(mprl) || !qbSelectedUnit || !qbSelectedStroke) {
-                move1El.textContent = '—'; note1El.textContent = '';
-                move2El.textContent = '—'; note2El.textContent = '';
-                warn.classList.add('hidden');
+            if (isNaN(pprl) || isNaN(mprl)) {
+                resultEl.textContent = '-'; tfMaxEl.textContent = '-'; micEl.textContent = '-';
+                noteEl.textContent = 'Enter both Peak Load (PPRL) and Min Load (MPRL).';
+                return;
+            }
+            if (!qbSelectedUnit || !qbSelectedStroke) {
+                resultEl.textContent = '-'; tfMaxEl.textContent = '-'; micEl.textContent = '-';
+                noteEl.textContent = 'Select a unit size and stroke length first.';
                 return;
             }
 
@@ -1684,9 +1737,9 @@
             const cw1 = (type1 && counterweightsDB[type1]) ? counterweightsDB[type1] : null;
             const cw2 = (type2 && counterweightsDB[type2] && type2 !== 'None') ? counterweightsDB[type2] : null;
 
-            let res;
+            let data;
             try {
-                const data = await callWorker('quickCbe', {
+                data = await callWorker('quickCbe', {
                     unit: qbSelectedUnit,
                     stroke: qbSelectedStroke,
                     pprl: pprl,
@@ -1694,15 +1747,22 @@
                     cw1: cw1,
                     cw2: cw2
                 });
-                res = data.cwMovement;
             } catch (err) {
                 showCalcError(err.message);
+                tfMaxEl.textContent = '-'; micEl.textContent = '-';
+                noteEl.textContent = 'Calculation unavailable.';
                 move1El.textContent = '—'; note1El.textContent = '';
                 move2El.textContent = '—'; note2El.textContent = '';
                 warn.classList.add('hidden');
                 return;
             }
 
+            resultEl.textContent = data.effCBE.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' lb';
+            tfMaxEl.textContent = data.tfMax.toFixed(2) + ' in';
+            micEl.textContent   = data.mIc.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' in-lb';
+            noteEl.textContent = '';
+
+            const res = data.cwMovement;
             let anyWarning = false;
             const msgs = [];
 
@@ -1806,7 +1866,7 @@
             status.classList.remove('hidden');
 
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 try {
                     const text = e.target.result;
                     const lines = text.split(/[\r\n]+/).map(l => l.trim()).filter(l => l !== '');
@@ -1842,6 +1902,19 @@
                             const val = parseFloat(lines[headerLines + n + i]);
                             if (!isNaN(val)) parsedData.positionValues.push(val);
                         }
+                    }
+
+                    // ── License: deduct exactly 1 trial for this new file upload ──
+                    // Done before revealing Steps 2/3 so an invalid/exhausted
+                    // license blocks the rest of the flow immediately.
+                    status.className = 'status';
+                    status.textContent = 'Verifying license…';
+                    try {
+                        await callWorker('consumeTrial', {});
+                    } catch (licErr) {
+                        status.className = 'status error';
+                        status.textContent = '❌ ' + licErr.message;
+                        return;
                     }
 
                     const spm = parsedData.strokeTime > 0 ? (60 / parsedData.strokeTime).toFixed(2) : 'N/A';
