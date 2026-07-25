@@ -980,9 +980,16 @@
                     </div>
                     <select id="cwcType1" onchange="calcCWMovement()"
                         style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #0f3460;
-                               background:#0d1628; color:#e0e0e0; font-size:0.88rem; margin-bottom:18px;">
+                               background:#0d1628; color:#e0e0e0; font-size:0.88rem; margin-bottom:10px;">
                         <option value="">-- Select Type --</option>
                     </select>
+                    <label style="display:block; color:#888; font-size:0.72rem; margin-bottom:4px;">
+                        Or enter actual Side 1 movement (optional, in):
+                    </label>
+                    <input type="number" id="cwc1_manualMove" step="0.01" placeholder="leave blank to auto-split"
+                        oninput="calcCWMovement()"
+                        style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #0f3460;
+                               background:#0d1628; color:#e0e0e0; font-size:0.88rem; margin-bottom:18px;">
                     <div style="text-align:center; padding:10px 0;">
                         <div style="color:#666; font-size:0.75rem; text-transform:uppercase;
                                     letter-spacing:0.08em; margin-bottom:6px;">Movement Needed</div>
@@ -1020,6 +1027,7 @@
             <div style="margin-top:12px; color:#444; font-size:0.75rem; font-style:italic; text-align:center;">
                 Movement = CrankLength − ArmLength/2 − (Delta ÷ Weight×2)
                 &nbsp;|&nbsp; if Side 2 = None → Side 1 uses full Delta
+                &nbsp;|&nbsp; if Side 1 movement entered manually → Side 2 = Delta − Side 1's actual moment
             </div>
 
             <!-- Warning -->
@@ -1166,9 +1174,15 @@
                         </div>
                         <select id="qbCwcType1"
                             style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #0f3460;
-                                   background:#0d1628; color:#e0e0e0; font-size:0.88rem; margin-bottom:18px;">
+                                   background:#0d1628; color:#e0e0e0; font-size:0.88rem; margin-bottom:10px;">
                             <option value="">-- Select Type --</option>
                         </select>
+                        <label style="display:block; color:#888; font-size:0.72rem; margin-bottom:4px;">
+                            Or enter actual Side 1 movement (optional, in):
+                        </label>
+                        <input type="number" id="qbCwc1ManualMove" step="0.01" placeholder="leave blank to auto-split"
+                            style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #0f3460;
+                                   background:#0d1628; color:#e0e0e0; font-size:0.88rem; margin-bottom:18px;">
                         <div style="text-align:center; padding:10px 0;">
                             <div style="color:#666; font-size:0.75rem; text-transform:uppercase;
                                         letter-spacing:0.08em; margin-bottom:6px;">Movement Needed</div>
@@ -1204,6 +1218,7 @@
 
                 <div style="margin-top:12px; color:#444; font-size:0.75rem; font-style:italic; text-align:center;">
                     Movement = CrankLength − ArmLength/2 − (Delta ÷ Weight×2) &nbsp;|&nbsp; if Side 2 = None → Side 1 uses full Delta
+                    &nbsp;|&nbsp; if Side 1 movement entered manually → Side 2 = Delta − Side 1's actual moment
                 </div>
 
                 <div style="text-align:center; margin-top:16px;">
@@ -1294,7 +1309,7 @@
         ];
         const QUICK_CBE_TRIGGER_IDS = [
             'qbCalculateBtn', 'qbUnitSize', 'qbStrokeLength',
-            'qbPPRL', 'qbMPRL', 'qbCwcType1', 'qbCwcType2'
+            'qbPPRL', 'qbMPRL', 'qbCwcType1', 'qbCwcType2', 'qbCwc1ManualMove'
         ];
 
         function setTriggersDisabled(ids, disabled) {
@@ -1891,6 +1906,9 @@
             const cw1 = (type1 && counterweightsDB[type1]) ? counterweightsDB[type1] : null;
             const cw2 = (type2 && counterweightsDB[type2] && type2 !== 'None') ? counterweightsDB[type2] : null;
 
+            const manualInput = document.getElementById('qbCwc1ManualMove').value;
+            const manualMv1 = manualInput.trim() === '' ? null : parseFloat(manualInput);
+
             let data;
             try {
                 data = await callWorker('quickCbe', {
@@ -1899,7 +1917,8 @@
                     pprl: pprl,
                     mprl: mprl,
                     cw1: cw1,
-                    cw2: cw2
+                    cw2: cw2,
+                    manualMv1: manualMv1
                 });
             } catch (err) {
                 showCalcError(err.message);
@@ -1922,7 +1941,7 @@
 
             if (res.mv1 !== null) {
                 move1El.textContent = res.mv1.toFixed(2) + ' in';
-                note1El.textContent = res.side2active ? 'using Delta ÷ 2' : 'using full Delta (no Side 2)';
+                note1El.textContent = res.manualOverride ? 'manual entry' : (res.side2active ? 'using Delta ÷ 2' : 'using full Delta (no Side 2)');
                 if (res.mv1 < 0) {
                     move1El.style.color = '#ff6b6b';
                     anyWarning = true;
@@ -1938,7 +1957,7 @@
 
             if (res.mv2 !== null) {
                 move2El.textContent = res.mv2.toFixed(2) + ' in';
-                note2El.textContent = 'using Delta ÷ 2';
+                note2El.textContent = res.manualOverride ? 'computed: Delta − Side 1\'s actual moment' : 'using Delta ÷ 2';
                 if (res.mv2 < 0) {
                     move2El.style.color = '#ff6b6b';
                     anyWarning = true;
@@ -2602,10 +2621,13 @@
             const cw2 = (type2 && counterweightsDB[type2] && type2 !== 'None')
                         ? counterweightsDB[type2] : null;
 
+            const manualInput = document.getElementById('cwc1_manualMove').value;
+            const manualMv1 = manualInput.trim() === '' ? null : parseFloat(manualInput);
+
             // Delegate to the Worker (action "cwMovement")
             let res;
             try {
-                res = await callWorker('cwMovement', { M_optimized, crankEffect, crankLength, cw1, cw2 });
+                res = await callWorker('cwMovement', { M_optimized, crankEffect, crankLength, cw1, cw2, manualMv1 });
             } catch (err) {
                 showCalcError(err.message);
                 return;
@@ -2622,7 +2644,7 @@
             // ── Side 1 ──
             if (res.mv1 !== null) {
                 move1El.textContent = res.mv1.toFixed(2) + ' in';
-                note1El.textContent = res.side2active ? 'using Delta ÷ 2' : 'using full Delta (no Side 2)';
+                note1El.textContent = res.manualOverride ? 'manual entry' : (res.side2active ? 'using Delta ÷ 2' : 'using full Delta (no Side 2)');
                 if (res.mv1 < 0) {
                     move1El.style.color = '#ff6b6b';
                     anyWarning = true;
@@ -2639,7 +2661,7 @@
             // ── Side 2 ──
             if (res.mv2 !== null) {
                 move2El.textContent = res.mv2.toFixed(2) + ' in';
-                note2El.textContent = 'using Delta ÷ 2';
+                note2El.textContent = res.manualOverride ? 'computed: Delta − Side 1\'s actual moment' : 'using Delta ÷ 2';
                 if (res.mv2 < 0) {
                     move2El.style.color = '#ff6b6b';
                     anyWarning = true;
