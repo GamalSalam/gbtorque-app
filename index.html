@@ -1147,15 +1147,11 @@
                 <h2><span class="step-badge">3</span> Result</h2>
                 <div class="result-box">
                     <div class="result-row">
-                        <span class="result-label">Effective CBE&nbsp; =&nbsp; (PPRL + MPRL) / 2</span>
+                        <span class="result-label">Effective CBE</span>
                         <span class="result-value highlight" id="qbEffCBE">-</span>
                     </div>
                     <div class="result-row">
-                        <span class="result-label">Torque Factor (max) — swept over 0°–360°</span>
-                        <span class="result-value" id="qbTFmax">-</span>
-                    </div>
-                    <div class="result-row">
-                        <span class="result-label">Equivalent Moment&nbsp; M_ic&nbsp; =&nbsp; (EffCBE − B_unbal) × TF_max</span>
+                        <span class="result-label">Equivalent Moment (M_ic)</span>
                         <span class="result-value highlight" id="qbMic">-</span>
                     </div>
                 </div>
@@ -1881,7 +1877,6 @@
             const pprl = parseFloat(document.getElementById('qbPPRL').value);
             const mprl = parseFloat(document.getElementById('qbMPRL').value);
             const resultEl = document.getElementById('qbEffCBE');
-            const tfMaxEl   = document.getElementById('qbTFmax');
             const micEl     = document.getElementById('qbMic');
             const noteEl    = document.getElementById('qbCbeNote');
             const move1El = document.getElementById('qbCwc1Move');
@@ -1891,12 +1886,12 @@
             const warn    = document.getElementById('qbCwcWarning');
 
             if (isNaN(pprl) || isNaN(mprl)) {
-                resultEl.textContent = '-'; tfMaxEl.textContent = '-'; micEl.textContent = '-';
+                resultEl.textContent = '-'; micEl.textContent = '-';
                 noteEl.textContent = 'Enter both Peak Load (PPRL) and Min Load (MPRL).';
                 return;
             }
             if (!qbSelectedUnit || !qbSelectedStroke) {
-                resultEl.textContent = '-'; tfMaxEl.textContent = '-'; micEl.textContent = '-';
+                resultEl.textContent = '-'; micEl.textContent = '-';
                 noteEl.textContent = 'Select a unit size and stroke length first.';
                 return;
             }
@@ -1922,7 +1917,7 @@
                 });
             } catch (err) {
                 showCalcError(err.message);
-                tfMaxEl.textContent = '-'; micEl.textContent = '-';
+                micEl.textContent = '-';
                 noteEl.textContent = 'Calculation unavailable.';
                 move1El.textContent = '—'; note1El.textContent = '';
                 move2El.textContent = '—'; note2El.textContent = '';
@@ -1931,7 +1926,6 @@
             }
 
             resultEl.textContent = data.effCBE.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' lb';
-            tfMaxEl.textContent = data.tfMax.toFixed(2) + ' in';
             micEl.textContent   = data.mIc.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' in-lb';
             noteEl.textContent = '';
 
