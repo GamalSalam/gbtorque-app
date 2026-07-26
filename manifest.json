@@ -1,7 +1,7 @@
 {
-  "name": "GB Torque app",
-  "short_name": "GBTorque",
-  "description": "Gearbox Torque Analyzer for Sucker Rod Surface Units",
+"name": "GB Torque Pro",
+"short_name": "GBTorque Pro",
+"description": "Professional Gearbox Torque Analyzer for Sucker Rod Pumping Units — full analysis, license-managed",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
