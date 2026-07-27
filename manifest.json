@@ -1,37 +1,23 @@
 {
-"name": "GB Torque Pro",
-"short_name": "GBTorque Pro",
-"description": "Professional Gearbox Torque Analyzer for Sucker Rod Pumping Units — full analysis, license-managed",
+  "name": "GB Torque app",
+  "short_name": "GBTorque",
+  "description": "Gearbox Torque Analyzer for Sucker Rod Surface Units",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#1a1a2e",
   "theme_color": "#00d4ff",
-  "orientation": "any",
   "icons": [
     {
       "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/png"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "type": "image/png"
     }
   ]
 }
